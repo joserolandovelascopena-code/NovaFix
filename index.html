@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NovaFix | Hojas de diagnostico</title>
+    <link rel="stylesheet" href="/public/css/styles.css" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans:ital,opsz,wght@0,17..18,400..700;1,17..18,400..700&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+    />
+  </head>
+  <body>
+    <div class="appShell">
+      <aside class="navBar">
+        <div class="brand">
+          <img src="/public/icos/logo app.png" alt="NovaFix" />
+          <div>
+            <strong>NovaFix</strong>
+            <span>Diagnosticos</span>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Navegacion principal">
+          <button class="option home active" type="button" data-view="hojas">
+            <span class="material-symbols-outlined">home</span>
+            <span>Hojas</span>
+          </button>
+          <button class="option agregar" type="button" data-view="form">
+            <span class="material-symbols-outlined">add_notes</span>
+            <span>Nuevo</span>
+          </button>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <section class="hojasDiag view active" aria-labelledby="tituloHojas">
+          <header class="workspaceHeader">
+            <div>
+              <p class="eyebrow">Centro de diagnosticos</p>
+              <h1 id="tituloHojas">Hojas de incidencia tecnica</h1>
+            </div>
+            <div class="headerActions">
+              <button class="ghostAction" type="button" id="focusHojasBtn">
+                <span class="material-symbols-outlined">fullscreen</span>
+                Pantalla completa
+              </button>
+              <button class="primaryAction" type="button" id="crearHojaBtn">
+                <span class="material-symbols-outlined">add</span>
+                Nueva hoja
+              </button>
+            </div>
+          </header>
+
+          <section class="toolbar" aria-label="Herramientas de hojas">
+            <label class="searchBox" for="buscarHojas">
+              <span class="material-symbols-outlined">search</span>
+              <input
+                id="buscarHojas"
+                type="search"
+                placeholder="Buscar por folio, equipo, usuario o ubicacion"
+              />
+            </label>
+
+            <div class="toolbarGroup">
+              <label for="filtroEstado">Estado</label>
+              <select id="filtroEstado">
+                <option value="Todos">Todos</option>
+                <option value="Pendiente">Pendiente</option>
+                <option value="En proceso">En proceso</option>
+                <option value="Finalizado">Finalizado</option>
+              </select>
+            </div>
+
+            <div class="toolbarGroup">
+              <label for="ordenHojas">Orden</label>
+              <select id="ordenHojas">
+                <option value="recientes">Recientes</option>
+                <option value="folio">Folio</option>
+                <option value="estado">Estado</option>
+              </select>
+            </div>
+
+            <div class="zoomTools" aria-label="Zoom de documento">
+              <button
+                class="iconButton"
+                type="button"
+                id="zoomOut"
+                title="Alejar"
+              >
+                <span class="material-symbols-outlined">zoom_out</span>
+              </button>
+              <input
+                id="zoomRange"
+                type="range"
+                min="50"
+                max="130"
+                step="5"
+                value="85"
+                aria-label="Nivel de zoom"
+              />
+              <button
+                class="iconButton"
+                type="button"
+                id="zoomIn"
+                title="Acercar"
+              >
+                <span class="material-symbols-outlined">zoom_in</span>
+              </button>
+              <button class="textButton" type="button" id="fitWidth">
+                Ajustar
+              </button>
+              <output id="zoomValue" for="zoomRange">85%</output>
+            </div>
+          </section>
+
+          <section class="summaryStrip" aria-label="Resumen">
+            <article>
+              <span id="totalHojas">0</span>
+              <p>Total</p>
+            </article>
+            <article>
+              <span id="pendientesHojas">0</span>
+              <p>Pendientes</p>
+            </article>
+            <article>
+              <span id="procesoHojas">0</span>
+              <p>En proceso</p>
+            </article>
+            <article>
+              <span id="finalizadasHojas">0</span>
+              <p>Finalizadas</p>
+            </article>
+          </section>
+
+          <section class="hojasViewport">
+            <button class="focusExitButton" type="button" id="exitFocusBtn">
+              <span class="material-symbols-outlined">fullscreen_exit</span>
+              Vista normal
+            </button>
+            <div class="emptyState hidden" id="emptyState">
+              <span class="material-symbols-outlined">description</span>
+              <h2>No hay hojas para mostrar</h2>
+              <p>Crea una hoja nueva o cambia los filtros de busqueda.</p>
+            </div>
+            <div class="hojas" id="hojas"></div>
+          </section>
+        </section>
+
+        <section class="datas view" aria-labelledby="tituloFormulario">
+          <form class="formulario" id="diagnosticoForm">
+            <header class="formHeader">
+              <div>
+                <p class="eyebrow">Captura de informacion</p>
+                <h1 id="tituloFormulario">Nueva hoja de diagnostico</h1>
+              </div>
+              <button class="ghostAction" type="button" id="volverHojasBtn">
+                <span class="material-symbols-outlined">arrow_back</span>
+                Volver
+              </button>
+            </header>
+
+            <section class="formPanel">
+              <h2>1. Informacion del reporte</h2>
+              <div class="formGrid">
+                <label>
+                  Folio
+                  <input type="text" id="folio" class="input" required />
+                </label>
+                <label>
+                  Estado
+                  <select class="input" id="estado" required>
+                    <option>Pendiente</option>
+                    <option>En proceso</option>
+                    <option>Finalizado</option>
+                  </select>
+                </label>
+                <label>
+                  Fecha del reporte
+                  <input type="date" class="input" id="fecha" required />
+                </label>
+                <label>
+                  Hora
+                  <input type="time" class="input" id="hora" required />
+                </label>
+                <label>
+                  Usuario responsable
+                  <input
+                    type="text"
+                    id="usuarioResponsable"
+                    class="input"
+                    required
+                  />
+                </label>
+                <label>
+                  Ubicacion
+                  <input type="text" id="ubicacion" class="input" required />
+                </label>
+              </div>
+            </section>
+
+            <section class="formPanel">
+              <h2>2. Informacion del equipo</h2>
+              <div class="formGrid">
+                <label>
+                  ID del equipo (Tag)
+                  <input type="text" id="idEquipo" class="input" required />
+                </label>
+                <label>
+                  Marca / Modelo
+                  <input type="text" id="marcaModelo" class="input" required />
+                </label>
+                <label class="spanTwo">
+                  Sistema operativo
+                  <input
+                    type="text"
+                    id="sistemaOperativo"
+                    class="input"
+                    required
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section class="formPanel">
+              <h2>3. Detalle tecnico</h2>
+              <div class="formGrid">
+                <label class="spanTwo">
+                  Problema reportado por usuario
+                  <textarea id="problema" class="input" required></textarea>
+                </label>
+                <label class="spanTwo">
+                  Diagnostico preliminar
+                  <textarea id="diagnostico" class="input" required></textarea>
+                </label>
+                <label class="spanTwo">
+                  Solucion aplicada y acciones tomadas
+                  <textarea id="solucion" class="input" required></textarea>
+                </label>
+              </div>
+            </section>
+
+            <section class="formPanel">
+              <h2>4. Firmas, cierre y observaciones</h2>
+              <div class="formGrid">
+                <label>
+                  Tecnico a cargo
+                  <input type="text" id="tecnicoCargo" class="input" required />
+                </label>
+                <label>
+                  Fecha de cierre
+                  <input type="date" id="fechaCierre" class="input" />
+                </label>
+                <label class="spanTwo">
+                  Visto bueno encargado
+                  <input type="text" id="vistoBueno" class="input" />
+                </label>
+                <label class="spanTwo">
+                  Observaciones finales
+                  <textarea id="observaciones" class="input"></textarea>
+                </label>
+              </div>
+            </section>
+
+            <div class="formActions">
+              <p id="saveStatus" role="status"></p>
+              <button class="secondaryAction" type="reset">
+                <span class="material-symbols-outlined">restart_alt</span>
+                Limpiar
+              </button>
+              <button class="primaryAction" type="submit" id="btnSave">
+                <span class="material-symbols-outlined">save</span>
+                Guardar diagnostico
+              </button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <script src="/public/js/app.js"></script>
+  </body>
+</html>
