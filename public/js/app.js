@@ -1,11 +1,13 @@
 const GOOGLE_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbzdHddH54hFMPmv5afJQJ_K9SkoXJhPfphz_xnILe07q-IgduijoRRaX0XvHDfmTZCN/exec";
-const STORAGE_KEY = "novafix-diagnosticos";
+  "https://script.google.com/macros/s/AKfycbyvwI4WLH5BMJDQgIu2Sl_3OBlf34VT4rlqx4rZb-Qm6boWhHeZyrovM8elOBRGpm8/exec";
 const SHEET_WIDTH = 816;
 const SHEET_HEIGHT = 1056;
+const toastTimers = new WeakMap();
 
 const state = {
   diagnosticos: [],
+  editingFolio: null,
+  toastCounter: 0,
   zoom: 85,
   filters: {
     query: "",
@@ -64,11 +66,11 @@ const fieldIds = [
 ];
 
 function init() {
-  state.diagnosticos = loadDiagnosticos();
   bindEvents();
   prepareFormDefaults();
   applyZoom(state.zoom);
   render();
+  loadDiagnosticosFromGoogleSheet();
 }
 
 function bindEvents() {
@@ -81,7 +83,11 @@ function bindEvents() {
 
   elements.form.addEventListener("submit", handleSubmit);
   elements.form.addEventListener("reset", () => {
-    window.setTimeout(prepareFormDefaults, 0);
+    state.editingFolio = null;
+    window.setTimeout(() => {
+      prepareFormDefaults();
+      setFormMode("create");
+    }, 0);
     setSaveStatus("");
   });
 
@@ -107,6 +113,8 @@ function bindEvents() {
   elements.zoomIn.addEventListener("click", () => applyZoom(state.zoom + 5));
   elements.zoomOut.addEventListener("click", () => applyZoom(state.zoom - 5));
   elements.fitWidth.addEventListener("click", fitSheetToWidth);
+
+  elements.hojas.addEventListener("click", handleHojaAction);
 }
 
 function showView(viewName) {
@@ -131,9 +139,11 @@ function setFocusMode(isActive) {
 }
 
 function showNewForm() {
+  state.editingFolio = null;
   elements.form.reset();
   prepareFormDefaults();
   setSaveStatus("");
+  setFormMode("create");
   showView("form");
   document.querySelector("#usuarioResponsable").focus();
 }
@@ -153,26 +163,52 @@ async function handleSubmit(event) {
   event.preventDefault();
 
   const diagnostico = collectFormData();
-  setSaveStatus("Guardando hoja...");
+  const isEditing = Boolean(state.editingFolio);
+  const toastId = showToast({
+    type: "loading",
+    title: isEditing ? "Actualizando hoja" : "Guardando hoja",
+    message: "Sincronizando con Google Sheets...",
+  });
+  setSaveStatus(isEditing ? "Actualizando hoja..." : "Guardando hoja...");
   elements.form.querySelector("#btnSave").disabled = true;
 
-  state.diagnosticos = [diagnostico, ...state.diagnosticos];
-  persistDiagnosticos();
-  render();
-
   try {
-    await sendToGoogleSheet(diagnostico);
-    setSaveStatus("Guardado local y enviado a Google Sheets.");
+    await sendToGoogleSheet({
+      ...diagnostico,
+      action: isEditing ? "update" : "create",
+      originalFolio: state.editingFolio,
+    });
+    await loadDiagnosticosFromGoogleSheet({
+      showErrorToast: false,
+      rethrow: true,
+    });
+    setSaveStatus(
+      isEditing
+        ? "Hoja actualizada en Google Sheets."
+        : "Hoja guardada en Google Sheets.",
+    );
+    updateToast(toastId, {
+      type: "success",
+      title: isEditing ? "Hoja actualizada" : "Hoja guardada",
+      message: isEditing
+        ? "Los cambios se guardaron correctamente."
+        : "La nueva hoja ya esta en Google Sheets.",
+    });
+    state.editingFolio = null;
+    elements.form.reset();
+    prepareFormDefaults();
+    showView("hojas");
   } catch (error) {
     console.error(error);
-    setSaveStatus("Guardado localmente. Revisa la conexion con Google Sheets.");
+    setSaveStatus("No se pudo sincronizar con Google Sheets.");
+    updateToast(toastId, {
+      type: "error",
+      title: "No se pudo guardar",
+      message: "Revisa la conexion o el despliegue de Apps Script.",
+    });
   } finally {
     elements.form.querySelector("#btnSave").disabled = false;
   }
-
-  elements.form.reset();
-  prepareFormDefaults();
-  showView("hojas");
 }
 
 function collectFormData() {
@@ -182,8 +218,12 @@ function collectFormData() {
   }, {});
 
   const now = new Date();
-  datos.fechaPublicacion = formatDateTime(now);
-  datos.creadoEn = now.toISOString();
+  const original = state.diagnosticos.find(
+    (item) => item.folio === state.editingFolio,
+  );
+
+  datos.fechaPublicacion = original?.fechaPublicacion || formatDateTime(now);
+  datos.creadoEn = original?.creadoEn || now.toISOString();
   return datos;
 }
 
@@ -203,18 +243,316 @@ async function sendToGoogleSheet(datos) {
   }
 }
 
-function loadDiagnosticos() {
+async function loadDiagnosticosFromGoogleSheet(options = {}) {
+  const { showErrorToast = true, rethrow = false } = options;
+
+  setSaveStatus("Cargando hojas desde Google Sheets...");
+
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    return Array.isArray(saved) ? saved : [];
+    const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=list`);
+
+    if (!response.ok) {
+      throw new Error(`Google Sheets respondio con estado ${response.status}`);
+    }
+
+    const payload = await readJsonResponse(response);
+    state.diagnosticos = Array.isArray(payload.diagnosticos)
+      ? payload.diagnosticos
+      : [];
+    render();
+    setSaveStatus("");
   } catch (error) {
-    console.warn("No se pudo leer el almacenamiento local.", error);
-    return [];
+    console.error(error);
+    state.diagnosticos = [];
+    render();
+    setSaveStatus("No se pudieron cargar las hojas desde Google Sheets.");
+    if (showErrorToast) {
+      showToast({
+        type: "error",
+        title: "No se cargaron las hojas",
+        message: "El Apps Script no respondio con datos validos.",
+      });
+    }
+
+    if (rethrow) {
+      throw error;
+    }
   }
 }
 
-function persistDiagnosticos() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.diagnosticos));
+async function readJsonResponse(response) {
+  const text = await response.text();
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error(
+      `El Apps Script no devolvio JSON. Respuesta recibida: "${text}". Vuelve a desplegar el Web App con el codigo actualizado.`,
+    );
+  }
+}
+
+async function handleHojaAction(event) {
+  const button = event.target.closest("[data-action]");
+
+  if (!button) return;
+
+  const folio = button.dataset.folio;
+  const diagnostico = state.diagnosticos.find((item) => item.folio === folio);
+
+  if (!diagnostico) return;
+
+  if (button.dataset.action === "edit") {
+    editDiagnostico(diagnostico);
+    return;
+  }
+
+  if (button.dataset.action === "delete") {
+    await deleteDiagnostico(diagnostico);
+    return;
+  }
+
+  if (button.dataset.action === "download") {
+    downloadDiagnosticoPdf(diagnostico);
+  }
+}
+
+function editDiagnostico(diagnostico) {
+  state.editingFolio = diagnostico.folio;
+
+  fieldIds.forEach((fieldId) => {
+    document.querySelector(`#${fieldId}`).value = diagnostico[fieldId] || "";
+  });
+
+  setFormMode("edit");
+  setSaveStatus("");
+  showView("form");
+  document.querySelector("#usuarioResponsable").focus();
+}
+
+function setFormMode(mode) {
+  const isEdit = mode === "edit";
+
+  document.querySelector("#tituloFormulario").textContent = isEdit
+    ? "Editar hoja de diagnostico"
+    : "Nueva hoja de diagnostico";
+  elements.form.querySelector("#btnSave").innerHTML = isEdit
+    ? '<span class="material-symbols-outlined">save</span> Actualizar hoja'
+    : '<span class="material-symbols-outlined">save</span> Guardar diagnostico';
+}
+
+async function deleteDiagnostico(diagnostico) {
+  const confirmed = await confirmDeleteDiagnostico(diagnostico);
+
+  if (!confirmed) return;
+
+  const toastId = showToast({
+    type: "loading",
+    title: "Eliminando hoja",
+    message: `Quitando ${diagnostico.folio} de Google Sheets...`,
+  });
+  setSaveStatus("Eliminando hoja...");
+
+  try {
+    await sendToGoogleSheet({
+      action: "delete",
+      folio: diagnostico.folio,
+    });
+    await loadDiagnosticosFromGoogleSheet({
+      showErrorToast: false,
+      rethrow: true,
+    });
+    setSaveStatus("Hoja eliminada de Google Sheets.");
+    updateToast(toastId, {
+      type: "success",
+      title: "Hoja eliminada",
+      message: `${diagnostico.folio} se elimino correctamente.`,
+    });
+  } catch (error) {
+    console.error(error);
+    setSaveStatus("No se pudo eliminar la hoja en Google Sheets.");
+    updateToast(toastId, {
+      type: "error",
+      title: "No se pudo eliminar",
+      message: "Intentalo de nuevo o revisa Google Sheets.",
+    });
+  }
+}
+
+function showToast({ type = "success", title, message, duration = 4200 }) {
+  const container = getToastContainer();
+  const id = `toast-${Date.now()}-${state.toastCounter++}`;
+  const toast = document.createElement("article");
+  const isLoading = type === "loading";
+
+  toast.className = `toast toast-${type}`;
+  toast.dataset.toastId = id;
+  toast.innerHTML = renderToastContent({ type, title, message });
+  container.appendChild(toast);
+
+  window.requestAnimationFrame(() => {
+    toast.classList.add("visible");
+  });
+
+  if (!isLoading) {
+    scheduleToastDismiss(toast, duration);
+  }
+
+  return id;
+}
+
+function updateToast(id, { type = "success", title, message, duration = 4200 }) {
+  const toast = document.querySelector(`[data-toast-id="${id}"]`);
+
+  if (!toast) {
+    showToast({ type, title, message, duration });
+    return;
+  }
+
+  toast.className = `toast toast-${type} visible`;
+  toast.innerHTML = renderToastContent({ type, title, message });
+  scheduleToastDismiss(toast, duration);
+}
+
+function renderToastContent({ type, title, message }) {
+  const icon = {
+    success: "check_circle",
+    error: "error",
+    loading: "progress_activity",
+  }[type];
+
+  return `
+    <div class="toastIcon">
+      <span class="material-symbols-outlined">${icon}</span>
+    </div>
+    <div class="toastCopy">
+      <strong>${escapeHtml(title)}</strong>
+      <p>${escapeHtml(message)}</p>
+    </div>
+    <button class="toastClose" type="button" aria-label="Cerrar notificacion">
+      <span class="material-symbols-outlined">close</span>
+    </button>
+  `;
+}
+
+function getToastContainer() {
+  let container = document.querySelector("#toastContainer");
+
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "toastContainer";
+    container.setAttribute("aria-live", "polite");
+    container.setAttribute("aria-atomic", "true");
+    document.body.appendChild(container);
+    container.addEventListener("click", (event) => {
+      const closeButton = event.target.closest(".toastClose");
+
+      if (closeButton) {
+        dismissToast(closeButton.closest(".toast"));
+      }
+    });
+  }
+
+  return container;
+}
+
+function scheduleToastDismiss(toast, duration) {
+  window.clearTimeout(toastTimers.get(toast));
+  const timer = window.setTimeout(() => dismissToast(toast), duration);
+  toastTimers.set(toast, timer);
+}
+
+function dismissToast(toast) {
+  if (!toast) return;
+
+  window.clearTimeout(toastTimers.get(toast));
+  toastTimers.delete(toast);
+  toast.classList.remove("visible");
+  toast.addEventListener("transitionend", () => toast.remove(), {
+    once: true,
+  });
+}
+
+function confirmDeleteDiagnostico(diagnostico) {
+  const modal = document.createElement("div");
+  const folio = escapeHtml(diagnostico.folio || "esta hoja");
+
+  modal.className = "modalOverlay";
+  modal.innerHTML = `
+    <section class="confirmModal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle">
+      <div class="modalIcon danger">
+        <span class="material-symbols-outlined">delete</span>
+      </div>
+      <div class="modalCopy">
+        <h2 id="deleteModalTitle">Eliminar hoja</h2>
+        <p>Esta accion eliminara permanentemente la hoja <strong>${folio}</strong> de Google Sheets.</p>
+      </div>
+      <div class="modalActions">
+        <button class="secondaryAction" type="button" data-modal-action="cancel">
+          Cancelar
+        </button>
+        <button class="dangerAction" type="button" data-modal-action="confirm">
+          <span class="material-symbols-outlined">delete</span>
+          Eliminar
+        </button>
+      </div>
+    </section>
+  `;
+
+  document.body.appendChild(modal);
+
+  const cancelButton = modal.querySelector('[data-modal-action="cancel"]');
+  const confirmButton = modal.querySelector('[data-modal-action="confirm"]');
+
+  return new Promise((resolve) => {
+    const close = (result) => {
+      document.removeEventListener("keydown", handleKeydown);
+      modal.remove();
+      resolve(result);
+    };
+
+    const handleKeydown = (event) => {
+      if (event.key === "Escape") {
+        close(false);
+      }
+    };
+
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) {
+        close(false);
+      }
+    });
+    cancelButton.addEventListener("click", () => close(false));
+    confirmButton.addEventListener("click", () => close(true));
+    document.addEventListener("keydown", handleKeydown);
+    confirmButton.focus();
+  });
+}
+
+function downloadDiagnosticoPdf(diagnostico) {
+  const printRoot = document.querySelector("#printRoot") || createPrintRoot();
+  const originalTitle = document.title;
+  let cleanupTimer;
+  const cleanup = () => {
+    window.clearTimeout(cleanupTimer);
+    printRoot.innerHTML = "";
+    document.title = originalTitle;
+    window.removeEventListener("afterprint", cleanup);
+  };
+
+  printRoot.innerHTML = renderHojaDocument(diagnostico);
+  document.title = `${diagnostico.folio || "Hoja"} - NovaFix`;
+  window.addEventListener("afterprint", cleanup);
+  window.print();
+
+  cleanupTimer = window.setTimeout(cleanup, 1500);
+}
+
+function createPrintRoot() {
+  const printRoot = document.createElement("div");
+  printRoot.id = "printRoot";
+  document.body.appendChild(printRoot);
+  return printRoot;
 }
 
 function render() {
@@ -280,18 +618,35 @@ function renderSummary() {
 }
 
 function renderHoja(datos) {
+  return `
+    <article class="hojaContainer">
+      <div class="hojaMeta">
+        <p class="fechaPublicacion">Publicacion: ${escapeHtml(datos.fechaPublicacion || "")}</p>
+        <div class="hojaActions" aria-label="Acciones de ${escapeHtml(datos.folio)}">
+          <button class="iconButton" type="button" data-action="download" data-folio="${escapeHtml(datos.folio)}" title="Descargar PDF">
+            <span class="material-symbols-outlined">download</span>
+          </button>
+          <button class="iconButton" type="button" data-action="edit" data-folio="${escapeHtml(datos.folio)}" title="Editar hoja">
+            <span class="material-symbols-outlined">edit</span>
+          </button>
+          <button class="iconButton dangerButton" type="button" data-action="delete" data-folio="${escapeHtml(datos.folio)}" title="Eliminar hoja">
+            <span class="material-symbols-outlined">delete</span>
+          </button>
+        </div>
+      </div>
+      ${renderHojaDocument(datos)}
+    </article>
+  `;
+}
+
+function renderHojaDocument(datos) {
   const estado = datos.estado || "Pendiente";
   const estadoClass = `estado-${estado.replace(/\s/g, "-")}`;
 
   return `
-    <article class="hojaContainer">
-      <div>
-        <p class="fechaPublicacion">Publicacion: ${escapeHtml(datos.fechaPublicacion || "")}</p>
-        <span class="material-symbols-outlined"> s</span>
-      </div>
       <div class="hoja">
         <section class="encabezadoHoja">
-          <img src="/public/icos/logo app.png" alt="Logo Taller" loading="lazy" class="logoHoja" />
+          <img src="./public/icos/logo app.png" alt="Logo Taller" loading="lazy" class="logoHoja" />
           <div>
             <h2>REPORTE DE INCIDENCIA TECNICA (ITIR)</h2>
             <div class="datosTop">
@@ -381,7 +736,6 @@ function renderHoja(datos) {
           </table>
         </section>
       </div>
-    </article>
   `;
 }
 
