@@ -71,6 +71,7 @@ function init() {
   applyZoom(state.zoom);
   render();
   loadDiagnosticosFromGoogleSheet();
+  textCompleteInput();
 }
 
 function bindEvents() {
@@ -86,6 +87,7 @@ function bindEvents() {
     state.editingFolio = null;
     window.setTimeout(() => {
       prepareFormDefaults();
+      textCompleteInput();
       setFormMode("create");
     }, 0);
     setSaveStatus("");
@@ -117,6 +119,12 @@ function bindEvents() {
   elements.hojas.addEventListener("click", handleHojaAction);
 }
 
+function textCompleteInput() {
+  document.getElementById("ubicacion").value = "LAB-01 (PUESTO 1)";
+  document.getElementById("tecnicoCargo").value =
+    `Rolando Velasco, Varia Arias, Ulises Mercado`;
+}
+
 function showView(viewName) {
   if (viewName !== "hojas") {
     setFocusMode(false);
@@ -142,6 +150,7 @@ function showNewForm() {
   state.editingFolio = null;
   elements.form.reset();
   prepareFormDefaults();
+  textCompleteInput();
   setSaveStatus("");
   setFormMode("create");
   showView("form");
@@ -260,6 +269,7 @@ async function loadDiagnosticosFromGoogleSheet(options = {}) {
       ? payload.diagnosticos
       : [];
     render();
+    broadcastDiagnosticosUpdate();
     setSaveStatus("");
   } catch (error) {
     console.error(error);
@@ -401,7 +411,10 @@ function showToast({ type = "success", title, message, duration = 4200 }) {
   return id;
 }
 
-function updateToast(id, { type = "success", title, message, duration = 4200 }) {
+function updateToast(
+  id,
+  { type = "success", title, message, duration = 4200 },
+) {
   const toast = document.querySelector(`[data-toast-id="${id}"]`);
 
   if (!toast) {
@@ -764,6 +777,17 @@ function fitSheetToWidth() {
 
 function setSaveStatus(message) {
   elements.saveStatus.textContent = message;
+}
+
+function broadcastDiagnosticosUpdate() {
+  try {
+    window.localStorage.setItem(
+      "novafix:diagnosticos-updated",
+      String(Date.now()),
+    );
+  } catch (error) {
+    console.warn("No se pudo notificar la actualizacion local.", error);
+  }
 }
 
 function createFolio(date) {

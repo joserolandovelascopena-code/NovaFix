@@ -60,7 +60,10 @@ h1 {
 h2 {
   font-size: 1rem;
 }
-
+a {
+  color: inherit;
+  text-decoration: none;
+}
 .appShell {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
@@ -656,7 +659,6 @@ hr {
   gap: 12px;
   align-items: start;
   border: 1px solid var(--line);
-  border-left-width: 4px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 18px 45px rgba(20, 33, 61, 0.18);
@@ -673,18 +675,6 @@ hr {
 .toast.visible {
   opacity: 1;
   transform: translateY(0) scale(1);
-}
-
-.toast-success {
-  border-left-color: var(--success);
-}
-
-.toast-error {
-  border-left-color: var(--danger);
-}
-
-.toast-loading {
-  border-left-color: var(--primary);
 }
 
 .toastIcon {
@@ -765,6 +755,7 @@ hr {
 }
 
 .formulario {
+  position: relative;
   width: min(960px, 100%);
   margin: 0 auto;
   padding: 0 26px 28px;
@@ -829,6 +820,7 @@ textarea.input {
 
 .formActions {
   position: sticky;
+
   bottom: 0;
   display: flex;
   align-items: center;
